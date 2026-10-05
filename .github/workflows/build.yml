@@ -1,0 +1,123 @@
+name: Build prebuilt dependencies
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dependency:
+        description: Reviewed dependency recipe identifier
+        type: string
+        default: tauri-cli
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: prebuilt-${{ github.event.inputs.dependency || 'tauri-cli' }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.recipe.outputs.matrix }}
+      toolchain: ${{ steps.recipe.outputs.toolchain }}
+      release: ${{ steps.recipe.outputs.release }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - run: node --test scripts/*.test.mjs
+      - id: recipe
+        env:
+          DEPENDENCY: ${{ inputs.dependency || 'tauri-cli' }}
+        run: node scripts/build.mjs matrix "$DEPENDENCY"
+  build:
+    if: github.event_name != 'push'
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.validate.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    env:
+      CARGO_HOME: ${{ github.workspace }}/.cache/cargo
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.cache/target
+      DEPENDENCY: ${{ inputs.dependency || 'tauri-cli' }}
+      BUILD_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Install the pinned native Rust toolchain
+        shell: bash
+        run: node scripts/build.mjs setup "$DEPENDENCY" "$BUILD_TARGET"
+      - name: Restore build dependencies
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            .cache/cargo/registry
+            .cache/cargo/git
+            .cache/target
+          key: prebuilt-v1-${{ matrix.target }}-${{ needs.validate.outputs.toolchain }}-${{ hashFiles('recipes/**', 'scripts/**') }}
+      - name: Build and verify the native archive
+        shell: bash
+        run: node scripts/build.mjs build "$DEPENDENCY" "$BUILD_TARGET"
+      - name: Save successful trusted build dependencies
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            .cache/cargo/registry
+            .cache/cargo/git
+            .cache/target
+          key: prebuilt-v1-${{ matrix.target }}-${{ needs.validate.outputs.toolchain }}-${{ hashFiles('recipes/**', 'scripts/**') }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: prebuilt-${{ matrix.target }}
+          path: artifacts/${{ matrix.target }}/*
+          if-no-files-found: error
+          retention-days: 7
+  publish:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: [validate, build]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      DEPENDENCY: ${{ inputs.dependency }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: artifacts
+          pattern: prebuilt-*
+      - name: Restore target directory names
+        run: |
+          node --input-type=module <<'JS'
+          import { readdir, rename } from 'node:fs/promises';
+          for (const name of await readdir('artifacts')) {
+            if (name.startsWith('prebuilt-')) await rename(`artifacts/${name}`, `artifacts/${name.slice(9)}`);
+          }
+          JS
+      - name: Verify the complete release set
+        run: node scripts/build.mjs assemble "$DEPENDENCY"
+      - name: Attest the verified archives
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: artifacts/release/*.tar.gz
+      - name: Publish the verified draft
+        run: node scripts/build.mjs publish "$DEPENDENCY"
