@@ -36,6 +36,7 @@ jobs:
         with:
           node-version: '24'
       - name: Verify a clean download and subsequent cache reuse
+        shell: bash
         env:
           DEPENDENCY: ${{ inputs.dependency }}
         run: node scripts/verify-release.mjs "$DEPENDENCY"
