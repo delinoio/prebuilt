@@ -39,3 +39,14 @@ Consumers choose the execution host, never the app's cross-compilation target.
 They verify restored executables, atomically install verified downloads, and
 fail on missing or invalid material. Explicit local source builds are separate
 from downloaded cache entries and are forbidden in CI.
+
+`scripts/prebuilt-dependencies.mjs` and `scripts/archive.mjs` are the portable
+consumer implementation. Copy both with their tests when adopting or updating
+the installer. Cache identity includes dependency, release and native host.
+Archive and executable digests are checked before execution. Exclusive install
+locks serialize concurrent preparation; verified staging directories replace
+the old cache by rename. A failed download does not select a source build.
+
+The read-only `verify-release.yml` workflow downloads the published lock into
+a new temporary consumer directory on each native host. It requires a verified
+cold installation and warm reuse with one download and no Cargo invocation.

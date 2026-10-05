@@ -1,0 +1,41 @@
+name: Verify published dependency
+on:
+  workflow_dispatch:
+    inputs:
+      dependency:
+        description: Reviewed dependency recipe
+        required: true
+        default: tauri-cli
+        type: string
+permissions:
+  contents: read
+jobs:
+  matrix:
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.recipe.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - id: recipe
+        env:
+          DEPENDENCY: ${{ inputs.dependency }}
+        run: node scripts/build.mjs matrix "$DEPENDENCY"
+  verify:
+    needs: matrix
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrix.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Verify a clean download and subsequent cache reuse
+        env:
+          DEPENDENCY: ${{ inputs.dependency }}
+        run: node scripts/verify-release.mjs "$DEPENDENCY"
