@@ -173,7 +173,7 @@ async function publish(id) {
   const bodyFile = join(repositoryRoot, ".cache/release-notes.md");
   await mkdir(dirname(bodyFile), { recursive: true });
   await writeFile(bodyFile, body);
-  run("gh", ["release", "create", tag, ...files, "--repo", distributionRepository, "--target", process.env.GITHUB_SHA, "--draft", "--title", tag, "--body-file", bodyFile], { stdio: "inherit" });
+  run("gh", ["release", "create", tag, ...files, "--repo", distributionRepository, "--target", process.env.GITHUB_SHA, "--draft", "--title", tag, "--notes-file", bodyFile], { stdio: "inherit" });
   const release = JSON.parse(run("gh", ["api", `repos/${distributionRepository}/releases?per_page=100`])).filter(item => item.tag_name === tag);
   if (release.length !== 1 || !release[0].draft || release[0].assets.length !== files.length) throw new Error("The publication draft is incomplete or ambiguous.");
   for (const asset of release[0].assets) {
