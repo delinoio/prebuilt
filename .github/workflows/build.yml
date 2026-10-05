@@ -65,6 +65,9 @@ jobs:
             .cache/cargo/git
             .cache/target
           key: prebuilt-v1-${{ matrix.target }}-${{ needs.validate.outputs.toolchain }}-${{ hashFiles('recipes/**', 'scripts/**') }}
+          # Cargo checks source freshness after a broader dependency-cache hit.
+          # Publication and installer edits do not require cold registry caches.
+          restore-keys: prebuilt-v1-${{ matrix.target }}-${{ needs.validate.outputs.toolchain }}-
       - name: Build and verify the native archive
         shell: bash
         run: node scripts/build.mjs build "$DEPENDENCY" "$BUILD_TARGET"

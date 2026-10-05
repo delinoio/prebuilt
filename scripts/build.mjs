@@ -171,6 +171,7 @@ async function publish(id) {
   const files = (await readdir(directory)).sort().map(name => join(directory, name));
   const body = `Prebuilt ${id} from ${recipe.source.repository}/commit/${recipe.source.revision}.\n\nBuilt with ${recipe.toolchain} from recipe ${recipe.recipeVersion} at ${process.env.GITHUB_SHA}. All ${recipe.targets.length} native targets passed executable and archive verification.\n\nPin the release and SHA-256 values from prebuilt-dependencies.lock.json. These assets are immutable; changed bytes require a new recipe version.\n`;
   const bodyFile = join(repositoryRoot, ".cache/release-notes.md");
+  await mkdir(dirname(bodyFile), { recursive: true });
   await writeFile(bodyFile, body);
   run("gh", ["release", "create", tag, ...files, "--repo", distributionRepository, "--target", process.env.GITHUB_SHA, "--draft", "--title", tag, "--body-file", bodyFile], { stdio: "inherit" });
   const release = JSON.parse(run("gh", ["api", `repos/${distributionRepository}/releases?per_page=100`])).filter(item => item.tag_name === tag);
